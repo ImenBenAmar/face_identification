@@ -49,14 +49,19 @@ class _LoginPageState extends State<LoginPage> {
       if (response.statusCode == 200) {
         setState(() {
           _result = '''
-          Name: ${responseData['name']}
-          Surname: ${responseData['surname']}
-          ID: ${responseData['id']}
-          Confidence: ${responseData['confidence']}
-          CIN: ${responseData['cin']}
-          Phone Number: ${responseData['phone_number']}
-          ''';
+        Name: ${responseData['name']}
+        Surname: ${responseData['surname']}
+        ID: ${responseData['id']}
+        Confidence: ${responseData['confidence']}
+        CIN: ${responseData['cin']}
+        Phone Number: ${responseData['phone_number']}
+        ''';
           _showForm = false; // Hide form if person is found
+        });
+      } else if (response.statusCode == 400) {
+        setState(() {
+          _result = responseData['error']; // Display the specific error message
+          _showForm = false; // Hide form as no form submission is needed
         });
       } else {
         setState(() {
