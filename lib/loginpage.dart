@@ -77,122 +77,131 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      final name = _nameController.text;
-      final surname = _surnameController.text;
-      final phoneNumber = _phoneController.text;
-      final cin = _cinController.text;
+ Future<void> _submitForm() async {
+  if (_formKey.currentState!.validate()) {
+    final name = _nameController.text;
+    final surname = _surnameController.text;
+    final phoneNumber = _phoneController.text;
+    final cin = _cinController.text;
 
-      try {
-        final image = await _controller!.takePicture();
-        final imageBytes = await image.readAsBytes();
+    try {
+      final image = await _controller!.takePicture();
+      final imageBytes = await image.readAsBytes();
 
-        final response = await http.post(
-          Uri.parse('http://127.0.0.1:5000/create_folder'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'name': name,
-            'surname': surname,
-            'phone_number': phoneNumber,
-            'cin': cin,
-            'image': base64Encode(imageBytes),
-          }),
-        );
+      final response = await http.post(
+        Uri.parse('http://127.0.0.1:5000/create_folder'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'surname': surname,
+          'phone_number': phoneNumber,
+          'cin': cin,
+          'image': base64Encode(imageBytes),
+        }),
+      );
 
-        final responseData = jsonDecode(response.body);
+      final responseData = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        final personId =
+            responseData['id'].toString(); // Convert ID to string
+        setState(() {
+          _result =
+              'Person added successfully with ID $personId. Please wait to capture your face.';
+        });
+
+        // Wait for 5 seconds
+        await Future.delayed(Duration(seconds: 5));
+
+        // Capture 100 images
+        List<http.MultipartFile> imageFiles = [];
+        for (int i = 0; i < 100; i++) {
+          try {
+            final image = await _controller!.takePicture();
+            final imageBytes = await image.readAsBytes();
+            final multipartFile = http.MultipartFile.fromBytes(
+              'images',
+              imageBytes,
+              filename: 'image_$i.jpg',
+            );
+            imageFiles.add(multipartFile);
+
+            setState(() {
+              _result = 'Captured image $i/100';
+            });
+          } catch (e) {
+            setState(() {
+              _result = 'Error capturing image $i: $e';
+            });
+          }
+        }
+
+        // Upload images
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse('http://127.0.0.1:5000/upload_images'),
+        )
+          ..fields['id'] = personId // Ensure ID is sent as a string
+          ..files.addAll(imageFiles);
+
+        final response = await request.send();
+        final responseBody = await response.stream.bytesToString();
 
         if (response.statusCode == 200) {
-          final personId =
-              responseData['id'].toString(); // Convert ID to string
           setState(() {
-            _result =
-                'Person added successfully with ID $personId. Please wait to capture your face.';
+            _result = 'Images uploaded successfully.';
           });
 
-          // Wait for 5 seconds
-          await Future.delayed(Duration(seconds: 5));
+          // Notify user that the model update is starting
+          setState(() {
+            _result = 'Wait until the model is updated.';
+          });
 
-          // Capture 170 images
-          List<http.MultipartFile> imageFiles = [];
-          for (int i = 0; i < 100; i++) {
-            try {
-              final image = await _controller!.takePicture();
-              final imageBytes = await image.readAsBytes();
-              final multipartFile = http.MultipartFile.fromBytes(
-                'images',
-                imageBytes,
-                filename: 'image_$i.jpg',
-              );
-              imageFiles.add(multipartFile);
+          // Update the model
+          final updateResponse = await http.post(
+            Uri.parse('http://127.0.0.1:5000/update_model'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'id': personId}),
+          );
 
-              setState(() {
-                _result = 'Captured image $i/100';
-              });
-            } catch (e) {
-              setState(() {
-                _result = 'Error capturing image $i: $e';
-              });
-            }
-          }
-
-          // Upload images
-          final request = http.MultipartRequest(
-            'POST',
-            Uri.parse('http://127.0.0.1:5000/upload_images'),
-          )
-            ..fields['id'] = personId // Ensure ID is sent as a string
-            ..files.addAll(imageFiles);
-
-          final response = await request.send();
-          final responseBody = await response.stream.bytesToString();
-
-          if (response.statusCode == 200) {
+          if (updateResponse.statusCode == 200) {
             setState(() {
-              _result = 'Images uploaded successfully.';
+              _result =
+                  'Model updated successfully. Person added successfully to the database. You can check it.';
+              
+              // Clear the form fields
+              _nameController.clear();
+              _surnameController.clear();
+              _phoneController.clear();
+              _cinController.clear();
+              
+              // Hide the form
+              _showForm = false;
             });
-
-            // Notify user that the model update is starting
-            setState(() {
-              _result = 'Wait until the model is updated.';
-            });
-
-            // Update the model
-            final updateResponse = await http.post(
-              Uri.parse('http://127.0.0.1:5000/update_model'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({'id': personId}),
-            );
-
-            if (updateResponse.statusCode == 200) {
-              setState(() {
-                _result =
-                    'Model updated successfully. Person added successfully to the database. You can check it.';
-              });
-            } else {
-              setState(() {
-                _result =
-                    'Error updating the model: ${jsonDecode(updateResponse.body)['error']}';
-              });
-            }
           } else {
             setState(() {
               _result =
-                  'Error uploading images: ${jsonDecode(responseBody)['error']}';
+                  'Error updating the model: ${jsonDecode(updateResponse.body)['error']}';
             });
           }
         } else {
           setState(() {
-            _result = responseData['error'];
+            _result =
+                'Error uploading images: ${jsonDecode(responseBody)['error']}';
           });
         }
-      } catch (e) {
+      } else {
         setState(() {
-          _result = 'Error: $e';
+          _result = responseData['error'];
         });
       }
+    } catch (e) {
+      setState(() {
+        _result = 'Error: $e';
+      });
     }
   }
+}
 
   Widget _buildTextFormField({
     required TextEditingController controller,
